@@ -426,19 +426,19 @@ print(client3.accounts['Deposit'].balance)
 client3.close_invest(2)
 
 # # ПОПОЛНЕНИЕ/ СНЯТИЕ/ ПОКУПКИ
-# client4.accounts['Deposit'].activate()
-# client4.accounts['Deposit'].top_up_balance(100000)
-# try:
-#     client4.accounts['Deposit'].withdraw(12000)
-#     client4.accounts['Deposit'].purchase(157, 'coca-cola')
-#     client4.accounts['Deposit'].purchase(212000, 'iphone 16 PROMAX')
-#     client4.accounts['Deposit'].purchase(8560, 'АЗС Lukoil')
-# except Exception as e:
-#     print(e)
-# # print(client4.accounts['Deposit'].balance)
-# print(client4.get_all_info())
-#
-# bank.get_info()
+client4.accounts['Deposit'].activate()
+client4.accounts['Deposit'].top_up_balance(100000)
+try:
+    client4.accounts['Deposit'].withdraw(12000)
+    client4.accounts['Deposit'].purchase(157, 'coca-cola')
+    client4.accounts['Deposit'].purchase(212000, 'iphone 16 PROMAX')
+    client4.accounts['Deposit'].purchase(8560, 'АЗС Lukoil')
+except Exception as e:
+    print(e)
+# print(client4.accounts['Deposit'].balance)
+print(client4.get_all_info())
+
+bank.get_info()
 
 
 
