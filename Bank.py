@@ -35,6 +35,7 @@ class Bank:
         self.euro_balance = int(overall_balance / 3 / 92)
         self.bank_accounts = {'Debit': Debit, 'Credit': Credit, 'Invest': Invest, 'DailyInvest': DailyInvest}
         self.bank_currencies = {'rub': self.rub_balance, 'usd': self.usd_balance, 'eur': self.euro_balance}
+        self.exchanges = {'rub': 1, 'usd': 81, 'eur': 92}
         self.clients = set()
         self.withdraw_limit = withdraw_limit
         self.credit_limit = credit_limit
@@ -42,18 +43,6 @@ class Bank:
         self.credit_percent = credit_percent
         self.invest_percent = invest_percent
         self.daily_invest_percent = daily_invest_percent
-
-    @property
-    def rub(self):
-        return 1
-
-    @property
-    def usd(self):
-        return 81
-
-    @property
-    def eur(self):
-        return 92
 
     def __iadd__(self, client):
         if not isinstance(client, Client):
@@ -70,10 +59,9 @@ class Bank:
         return self
 
     def change_balance(self, summa, currency='rub', add=True):
-        quotes = {'rub': self.rub, 'usd': self.usd, 'eur': self.eur}
-        if currency not in quotes:
+        if currency not in self.exchanges:
             raise Exception("Неизвестная валюта")
-        conv_summa = summa * quotes[currency]
+        conv_summa = summa * self.exchanges[currency]
         if add:
             self.overall_balance += conv_summa
             self.bank_currencies[currency] += summa
@@ -96,185 +84,257 @@ class Client:
         self.filenames = []
         self.accounts = self.add_accounts(accounts)
         for name, obj in self.accounts.items():
-            filename = self.create_filename(name)
-            self.accounts[name].add_to_history(filename, f'Открыт {name} счет в валюте {obj.currency}')
+            filename = self.create_filename(obj)
+            self.filenames.append(filename)
+            # self.accounts[name].add_to_history(filename, f'Открыт {name} счет в валюте {obj.currency}')
 
     def add_accounts(self, accounts):
         accounts_obj = {}
         for el in accounts:
             if el[0] not in self.bank.bank_accounts:
                 raise Exception(f"Счета {el[0]} не существует")
-            accounts_obj[el[0]] = self.bank.bank_accounts[el[0]](self.bank, el[1])
+
+            name_account = el[0] + '_' + el[1]
+            accounts_obj[name_account] = self.bank.bank_accounts[el[0]](self.bank, el[1])
         return accounts_obj
 
-    def create_filename(self, other):
-        f_name = f"{self.name.split()[0]}_{self.name.split()[1]}_{self.accounts[other].get_name()}.txt'"
-        self.accounts[other].filename = f_name
-        self.filenames.append(self.accounts[other].filename)
+    def create_filename(self, obj):
+        f_name = f"{self.name.split()[0]}_{self.name.split()[1]}_{obj.get_name()}_{obj.currency}.txt'"
+        obj.filename = f_name
+        self.filenames.append(obj.filename)
         return f_name
 
-    def __iadd__(self, other):
-        if other not in self.bank.bank_accounts:
+    def __iadd__(self, account_obj):
+        name = account_obj.get_name()
+        currency = account_obj.currency
+
+        if name not in self.bank.bank_accounts:
             raise Exception(f"Неизвестный счет")
-        self.accounts[other] = self.bank.bank_accounts[other]
-        self.create_filename(other)
+        if currency not in self.bank.exchanges:
+            raise Exception("Неверно указана валюта")
+
+        self.accounts[name + '_' + currency] = account_obj
+        self.create_filename(account_obj)
         return self
 
     def __str__(self):
         return self.name
 
-    def activate_account(self, name_account):
+    def activate_account(self, name, currency):
+        name_account = name + '_' + currency
         if name_account not in self.accounts:
-            raise Exception(f"Нет счета {name_account}")
+            raise Exception(f"Нет счета {name} в валюте {currency}")
         self.accounts[name_account].is_activated = True
 
-    # def close_account(self, name_account):
-    #     if name_account in self.accounts:
-    #         del self.accounts[name_account]
+    def transfer_to(self, summa, where, currency, from_, currency2, client=None):
+        # print(where)
+        # print(from_)
+        # from_account = from_ + '_' + currency
+        # where_account = where + '_' + currency2
+        # print(from_account)
+        # print(where_account)
+        # print()
+        from_account = from_
+        where_account = where
 
-    def close_invest(self, account):
-        '''Метод закрывает счет Invest'''
-        if account != 'Invest':
-            raise Exception(f"Неверный счет")
-        if not self.bank.bank_accounts[account].is_activated:
-            raise Exception("Счет неактивен")
-
-        current_date = date.today()
-        end_date = self.accounts[account].date_end
-        if current_date >= end_date:
-            summa = int(self.accounts[account].balance + self.accounts[account].profit)
-        else:
-            summa = self.accounts[account].balance
-            self.accounts[account].monthly_rate = self.bank.invest_percent * 0.5 / 12  # уменьшаем ставку в два раза
-            new_period = (end_date.year - current_date.year) * 12 + (end_date.month - current_date.month)
-            if current_date.day > end_date.day:
-                new_period -= 1
-            self.accounts[account].period = new_period
-        total = summa * (1 + self.accounts[account].monthly_rate) ** self.accounts[account].period
-        profit = total - summa
-        summa += int(profit)
-        self.bank.bank_accounts[account].top_up_balance(summa, transact=True)
-        self.accounts[account].is_activated = False
-        self.accounts[account].balance = 0
-        print(f"Вывод денежных средств с инвестиционного счета в размере {summa} руб. Счет закрыт.")
-
-    def close_daily_invest(self, account):
-        accounts = {'Invest': 'Debit', 'InvestUSD': 'DebitUSD', 'InvestEUR': 'DebitEUR'}
-        self.accounts[account].accrue_daily_interest()
-        summa = self.accounts[account].balance
-        if self.accounts[account].balance > 0:
-            self.accounts[accounts[account]].top_up_balance(summa, transact=True)
-        self.accounts[account].is_activated = False
-        self.accounts[account].balance = 0
-        self.accounts[account].is_activated = False
-        currency = self.accounts[account].currency
-        print(f"Вывод денежных средств с инвестиционного счета в размере {summa} {currency}. Счет закрыт.")
-
-    def get_credit(self, summa, period, account):
-        if not self.solvency:
-            raise Exception("В кредите отказано")
-        if summa > self.bank.credit_limit:
-            raise Exception(f"Слишком большая сумма кредита. Банк может выдать вам {self.bank.credit_limit}")
-        for_trans = self.join_accounts[account]  # дебетовый счет для перевода в той же валюте
-
-        self.accounts[account].period = period
-        monthly_rate = self.bank.credit_percent / 12
-        numerator = summa * monthly_rate * (1 + monthly_rate) ** period
-        denominator = (1 + monthly_rate) ** period - 1
-        self.accounts[account].payment = int(numerator / denominator)
-        self.transfer_to(summa, for_trans, from_=account, client=self)
-        self.accounts[account].balance -= (self.accounts[account].payment * period)
-        self.solvency = False
-        write_down = (
-            f"Выдан кредит на сумму {summa} на срок {period} месяцев. "
-            f"Платеж составит {self.accounts[account].payment} {self.accounts[account].currency} "
-            f"Процентная ставка {self.bank.credit_percent} %")
-        self.solvency = False
-        filename = self.accounts[account]
-        self.accounts[account].add_to_history(filename, write_down)
-
-    def make_payment(self, summa, account):  # account в виде строки 'Credit', 'CreditUSD', 'CreditEUR'
-        for_trans = self.join_accounts[account]  # дебетовый счет для перевода в той же валюте
-        if self.accounts[account].balance == 0:
-            print("У вас нет задолженности")
-            self.accounts[for_trans].top_up_balance(summa)
-        elif abs(self.accounts[account].balance) <= summa:
-            self.accounts[account].balance += summa
-            self.accounts[account].payment = 0
-            self.accounts[account].period = 0
-            self.accounts[for_trans].balance.top_up_balance(self.accounts[account].balance)
-            self.accounts[account].balance = 0
-            self.accounts[account].is_activated = False
-            self.solvency = True
-            write_down = "Кредит погашен"
-            filename = self.accounts[account].filename
-            self.accounts[account].add_to_history(filename, write_down)
-        elif abs(self.accounts[account].balance) > summa:
-            if summa == self.accounts[account].payment:
-                self.accounts[account].balance += summa
-                self.accounts[account].period -= 1
-            elif summa > self.accounts[account].payment:
-                self.accounts[account].balance += summa
-                self.accounts[account].payment = self.accounts[account].balance / self.accounts[account].period
-                self.accounts[account].period -= 1
-            else:
-                fine = self.accounts[account].payment * 0.10  # штраф 10% от платежа
-                self.accounts[account].balance -= fine
-                self.accounts[account].payment = self.accounts[account].balance / self.accounts[account].period
-            write_down = f"Внесен платеж в размере {summa} руб.Остаток долга {self.accounts[account].balance} руб."
-            filename = self.accounts[account].filename
-            self.accounts[account].add_to_history(filename, write_down)
-
-    def transfer_to(self, summa, where, from_='Debit', client=None, period=None):
-        if client.accounts[where].is_blocked or client.accounts[from_].is_blocked:
-            raise Exception("Счет заблокирован")
         if client:  # перевод другому клиенту
-            if where not in ('Debit', 'DebitUSD', 'DebitEUR'):
+            if where != 'Debit':
                 raise Exception("Перевод другому клиенту можно совершать только на дебетовый счет.")
-            if client.accounts[where].currency != client.accounts[from_].currency:
-                raise Exception("Переводы можно совершать только в одной валюте")
+            if currency != currency2:
+                raise Exception("Перевод другому клиенту можно совершать только в одинаковой валюте")
+            if from_account not in self.accounts:
+                raise Exception(f"Счета {from_} у клиента {self.name} не существует")
+            if where_account not in client.accounts:
+                raise Exception(f"Счета {where} у клиента {client.name} не существует")
+            if self.accounts[where_account].is_blocked or client.accounts[from_account].is_blocked:
+                raise Exception("Счет заблокирован")
+
             commission = self.calc_commission(summa)
             sum_com = summa + commission
-            if sum_com > self.accounts['Debit'].balance:
+            if sum_com > self.accounts[from_account].balance:
                 raise Exception("Недостаточно средств на счете")
 
-            if not client.accounts[where].is_activated:
-                raise Exception(f"Счет {where} клиента {client} неактивен")
-            client.accounts[where].top_up_balance(summa, transact=True)
-            self.accounts[from_].balance -= sum_com
+            if not client.accounts[where_account].is_activated or not self.accounts[from_account].is_activated:
+                raise Exception(f"Счет неактивен")
+            client.accounts[where_account].top_up_balance(summa, transact=True)
+            self.accounts[from_account].balance -= sum_com
 
-            res = (f"Выполнен перевод  клиенту {client.name}. Сумма перевода {summa} руб. Комиссия {commission} руб. "
-                   f"Баланс {from_} счета {self.accounts['Debit'].balance} руб.")
+            write_down = (f"Выполнен перевод  клиенту {client.name}. Сумма перевода {summa} руб. "
+                          f"Комиссия {commission} руб. Баланс {from_} счета {self.accounts[from_account].balance} "
+                          f"{currency}")
 
         else:  # перевод себе
-            if where not in self.accounts or from_ not in self.accounts:
+            if where_account not in self.accounts or from_account not in self.accounts:
                 raise Exception(f"Счета не существует")
-            if summa > self.accounts[from_].balance:
+            if self.accounts[where_account].is_blocked or self.accounts[from_account].is_blocked:
+                raise Exception("Счет заблокирован")
+            if summa > self.accounts[from_account].balance:
                 raise Exception("Недостаточно средств на счете")
+            if not self.accounts[where_account].is_activated or not self.accounts[from_account].is_activated:
+                raise Exception(f"Счет неактивен")
 
-            self.accounts[from_].balance -= summa
-            to_rub = summa * self.bank.bank_currencies[from_]
-            to_exchange = to_rub * self.bank.bank_currencies[where]
-            self.accounts[where].activate()
-            if where in ('DailyInvest', 'DailyInvestUSD', 'DailyInvestEUR'):
-                self.accounts[where].balance -= to_exchange
-                self.accounts[where].lets_invest(summa, period)
-            res = (f"Выполнен перевод себе с {from_} счета на {where} счет. "
-                   f"Сумма перевода {summa} руб. Баланс {from_} счета {self.accounts['Debit'].balance} руб.")
+            to_rub = summa * self.bank.exchanges['rub']
+            to_exchange = to_rub // self.bank.exchanges[currency2]
+
+            self.accounts[from_account].balance -= summa
+            self.accounts[where_account].balance += to_exchange
+            res = (f"Выполнен перевод себе с {from_} счета на {where} счет."
+                   f"Сумма перевода {summa} {currency} Баланс {from_} счета {self.accounts[from_account].balance} {currency}")
             filename = self.accounts[from_].filename
-        self.accounts[from_].add_to_history(filename, res)
+        # self.accounts[from_].add_to_history(filename, res)
 
     def calc_commission(self, summa):
         return summa * self.bank.commission
+
+    def get_credit(self, summa, period, currency):
+        if not self.solvency:
+            raise Exception("В кредите отказано")
+        if currency not in self.bank.exchanges:
+            raise Exception(f"Банк не работает с {currency} валютой")
+        if summa * self.bank.exchanges[currency] > self.bank.credit_limit:
+            raise Exception(f"Слишком большая сумма кредита. Банк может выдать вам "
+                            f"{self.bank.credit_limit // self.bank.exchanges[currency]} {currency}.")
+
+        name_account = 'Credit' + '_' + currency
+        for_trans = 'Debit' + '_' + currency
+        if for_trans not in self.accounts:
+            self.accounts[for_trans] = Debit(self.bank, currency)
+
+        monthly_rate = self.bank.credit_percent / 12
+        numerator = summa * monthly_rate * (1 + monthly_rate) ** period
+        denominator = (1 + monthly_rate) ** period - 1
+
+        self.accounts[for_trans].balance += summa
+        percent = (self.accounts[name_account].payment * period) - summa
+
+        self.accounts[name_account].balance -= (percent + summa)  # TODO
+        print(self.accounts[name_account])
+        self.accounts[name_account].payment = int(numerator / denominator)  # TODO
+        self.accounts[name_account].period = period  # TODO
+        self.solvency = False
+        write_down = (
+            f"Выдан кредит на сумму {summa} на срок {period} месяцев. "
+            f"Платеж составит {self.accounts[name_account].payment} {self.accounts[name_account].currency} "
+            f"Процентная ставка {self.bank.credit_percent} %")
+        print(write_down)
+        # filename = f"{self.name.split()[0]}_{self.name.split()[1]}_{name_account}_{currency}"
+        # self.accounts[name_account].add_to_history(filename, write_down)
+
+    def make_payment(self, summa, currency):
+        credit_account = 'Credit' + '_' + currency
+        debit_account = 'Debit' + '_' + currency
+
+        if self.accounts[credit_account].balance == 0:
+            print("У вас нет задолженности")
+            self.accounts[debit_account].top_up_balance(summa)
+
+        elif abs(self.accounts[credit_account].balance) <= summa:
+            self.accounts[credit_account].balance += summa
+            self.accounts[credit_account].payment = 0
+            self.accounts[credit_account].period = 0
+            self.accounts[debit_account].balance.top_up_balance(self.accounts[credit_account].balance)
+            self.accounts[credit_account].is_activated = False
+            self.solvency = True
+            write_down = "Кредит погашен"
+            filename = self.accounts[credit_account].filename
+            # self.accounts[account].add_to_history(filename, write_down)
+
+        else:
+            if summa == self.accounts[credit_account].payment:
+                self.accounts[credit_account].balance += summa
+                self.accounts[credit_account].period -= 1
+            elif summa > self.accounts[credit_account].payment:
+                self.accounts[credit_account].balance += summa
+                self.accounts[credit_account].period -= 1
+                self.accounts[credit_account].payment = self.accounts[credit_account].balance / self.accounts[
+                    credit_account].period
+            else:
+                fine = self.accounts[credit_account].payment * 0.10  # штраф 10% от платежа
+                self.accounts[credit_account].balance -= fine
+                self.accounts[credit_account].payment = self.accounts[credit_account].balance / self.accounts[
+                    credit_account].period
+            write_down = f"Внесен платеж в размере {summa} руб.Остаток долга {self.accounts[credit_account].balance} {currency}"
+            filename = self.accounts[credit_account].filename
+            # self.accounts[account].add_to_history(filename, write_down)
+
+    def close_debit(self, name, currency):
+        if name != 'Debit':
+            raise Exception("Неверный счет")
+        name_account = name + '_' + currency
+        if name_account not in self.accounts:
+            raise Exception(f"Нет счета {name} в валюте {currency}")
+        if self.accounts[name_account].balance > 0:
+            summa = self.accounts[name_account].balance
+            self.accounts[name_account].withdraw(summa)
+        self.accounts[name_account].is_activated = False
+        write_down = f"Счет {name} в валюте {currency} закрыт"
+        filename = self.accounts[name_account].filename
+        # self.accounts[account].add_to_history(filename, write_down)
+
+    def close_credit(self, name, currency):
+        if name != 'Credit':
+            raise Exception("Неверный счет")
+        name_account = name + '_' + currency
+        if name_account not in self.accounts:
+            raise Exception(f"Нет счета {name} в валюте {currency}")
+        if self.accounts[name_account].balance < 0:
+            raise Exception(
+                f"Для закрытия кредитного счета погасите задолженность в размере {name_account.balance} {name_account.currency}")
+        if self.accounts[name_account].balance == 0:
+            self.accounts[name_account].is_activated = False
+            write_down = f"Счет {name} в валюте {currency} закрыт"
+            filename = self.accounts[name_account].filename
+            # self.accounts[account].add_to_history(filename, write_down)
+
+    def close_invest(self, currency):
+        name_account = 'Invest_' + currency
+        if name_account not in self.accounts:
+            raise Exception(f"Нет счета {Invest} в валюте {currency}")
+        if not self.accounts[name_account].is_activated:
+            raise Exception("Счет неактивен")
+
+        current_date = date.today()
+        end_date = self.accounts[name_account].date_end
+        if current_date >= end_date:
+            summa = int(self.accounts[name_account].balance + self.accounts[name_account].profit)
+        else:
+            summa = self.accounts[name_account].balance
+            self.accounts[
+                name_account].monthly_rate = self.bank.invest_percent * 0.5 / 12  # уменьшаем ставку в два раза
+            new_period = (end_date.year - current_date.year) * 12 + (end_date.month - current_date.month)
+            if current_date.day > end_date.day:
+                new_period -= 1
+            self.accounts[name_account].period = new_period
+        total = summa * (1 + self.accounts[name_account].monthly_rate) ** self.accounts[name_account].period
+        profit = total - summa
+        summa += int(profit)
+        self.accounts[name_account].top_up_balance(summa, transact=True)
+        self.accounts[name_account].is_activated = False
+        self.accounts[name_account].balance = 0
+        print(f"Вывод денежных средств с инвестиционного счета в размере {summa} {currency}. Счет закрыт.")
+
+    def close_daily_invest(self, currency):
+        name_account = 'DailyInvest_' + currency
+        self.accounts[name_account].accrue_daily_interest()
+        summa = self.accounts[name_account].balance
+
+        if self.accounts[name_account].balance > 0:
+            for_trans = 'Debit_' + currency
+            self.accounts[for_trans].top_up_balance(summa, transact=True)
+
+        self.accounts[name_account].is_activated = False
+        self.accounts[name_account].balance = 0
+        self.accounts[name_account].is_activated = False
+        print(f"Вывод денежных средств с инвестиционного счета в размере {summa} {currency}. Счет закрыт.")
 
     def get_all_info(self):
         return f"Данные клиента: {self.name}\nИнформация по счетам:\n{[el.get_info() for el in self.accounts.values()]}"
 
 
-@CreateHistory
+# @CreateHistory
 class Base(ABC):
     def __init__(self, bank, currency):
-        self._balance = 0
+        self.balance = 0
         self.is_activated = False
         self.is_blocked = False
         self.bank = bank
@@ -306,17 +366,17 @@ class Base(ABC):
         self.bank.change_balance(summa, self.currency)
         write_down = (f"Снятие наличных с {self.get_name()} счета в размере {summa} {self.currency}. "
                       f"Доступно {self.balance} {self.currency}.")
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
 
     def calc_commission(self, summa):
         return summa * self.bank.commission
 
     def __iadd__(self, summa):
-        self._balance += summa
+        self.balance += summa
         return self
 
     def __isub__(self, summa):
-        self._balance -= summa
+        self.balance -= summa
         return self
 
     def top_up_balance(self, summa, transact=False):
@@ -325,7 +385,7 @@ class Base(ABC):
             self.activate()
         self += summa
         write_down = f"Пополнение {self.get_name()} счета в размере {summa} {self.currency}. Доступно {self.balance} {self.currency}."
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
         if not transact:  # если это не перевод
             self.bank.change_balance(summa, self.currency, add=True)
 
@@ -337,16 +397,12 @@ class Base(ABC):
             raise Exception(f"Недостаточно средств на счете на покупку {name}")
         self -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency} Доступно {self.balance} {self.currency}"
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
         self.bank.change_balance(summa, self.currency)
 
     @abstractmethod
     def get_name(self):
         pass
-
-    @property
-    def balance(self):
-        return self._balance
 
     def get_info(self):
         return (
@@ -370,30 +426,29 @@ class Debit(Base):
         super().top_up_balance(summa, transact)
 
     def get_name(self):
-        return f'Debit_{str(self.currency)}'
+        return 'Debit'
 
 
 class Credit(Base):
     def __init__(self, bank, currency):
         super().__init__(bank, currency)
-        self.balance = -1 * self.balance
         self.payment = 0
         self.period = 0
 
     def withdraw(self, summa):
         raise Exception("Снятие наличных с кредитного счета недоступно")
 
-    def purchase(self, summa, name):
+    def purchase(self, *args):
         raise Exception("Операция недоступна")
 
     def credit_info(self):
         print(f"Сумма задолженности {self.balance} {self.currency}")
         print(f"Общий срок кредита {self.period} месяцев")
         print(f"Ежемесячный платеж {self.payment} {self.currency}")
-        print(f"Процентная ставка {self.bank.credit_percent}%")
+        print(f"Процентная ставка {int(self.bank.credit_percent * 100)} %")
 
     def get_name(self):
-        return f'Credit_{str(self.currency)}'
+        return 'Credit'
 
 
 class Invest(Base):
@@ -408,6 +463,7 @@ class Invest(Base):
     def lets_invest(self, summa, period):
         if self.is_blocked:
             raise Exception("Счет заблокирован")
+        self.activate()
         monthly_rate = self.bank.invest_percent / 12
         total = summa * (1 + monthly_rate) ** period
         self.profit = total - summa
@@ -419,7 +475,7 @@ class Invest(Base):
         result = (
             f"Вы инвестировали {summa} {self.currency}. на срок {self.period} месяцев под {int(self.bank.invest_percent * 100)} %. "
             f"Прибыль за весь период составит {int(self.balance + self.profit)} {self.currency}.")
-        self.add_to_history(self.filename, result)
+        # self.add_to_history(self.filename, result)
         self += summa
         print(result)
 
@@ -437,12 +493,11 @@ class Invest(Base):
     def withdraw(self, summa):
         raise Exception("Снятие наличных с инвестиционного счета недоступно")
 
-    def purchase(self, summa, name):
+    def purchase(self, *args):
         raise Exception("Операция недоступна")
 
-    @abstractmethod
     def get_name(self):
-        return f'Invest_{str(self.currency)}'
+        return 'Invest'
 
 
 class DailyInvest(Base):
@@ -451,14 +506,16 @@ class DailyInvest(Base):
         self.last_interest_date = date.today()  # Дата последнего начисления процентов
 
     def accrue_daily_interest(self):
-        today = date.today()
+        # today = date.today()
+        today = date(2025, 10, 15)
         days_passed = (today - self.last_interest_date).days
         if days_passed < 1:
-            return  # Проценты уже начислялись сегодня
+            return  # 'Проценты уже начислялись сегодня'
 
         for _ in range(days_passed):
-            profit = self.balance * self.bank.daily_invest_percent
+            profit = (self.balance * self.bank.daily_invest_percent) / 365
             self.balance += profit
+            self.balance = round(self.balance, 2)
         self.last_interest_date = today
 
     def lets_invest(self, summa):
@@ -467,7 +524,7 @@ class DailyInvest(Base):
         # days_rate = self.bank.daily_invest_percent / 365
         write_down = (
             f"Вы инвестировали {summa} {self.currency} под {int(self.bank.daily_invest_percent * 100)}%. ")
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
         self.balance += summa
         print(write_down)
 
@@ -475,27 +532,90 @@ class DailyInvest(Base):
         if self.is_blocked:
             raise Exception("Счет заблокирован")
         self.accrue_daily_interest()  # начисляем проценты на сумму до снятия
-        if summa < self.balance:
+        if summa > self.balance:
             raise Exception("Недостаточно средств")
         self.balance -= summa
         bank.bank_currencies[self.currency] -= summa
         write_down = f"Снятие наличных в размере {summa} {self.currency}"
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
 
     def purchase(self, summa, name):
         if self.is_blocked:
             raise Exception("Счет заблокирован")
         self.accrue_daily_interest()  # начисляем проценты на сумму до снятия
-        if summa < self.balance:
+        if summa > self.balance:
             raise Exception("Недостаточно средств")
         self.balance -= summa
         bank.bank_currencies[self.currency] -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency}"
-        self.add_to_history(self.filename, write_down)
+        # self.add_to_history(self.filename, write_down)
 
     def get_name(self):
-        return f'DailyInvest_{str(self.currency)}'
+        return 'DailyInvest'
 
 
+# ______________________________________________________________________________________________________________________
 bank = Bank()
-client1 = Client("Иванов Иван", bank, [('Debit', 'rub')])
+client1 = Client("Иванов Иван", bank, [('Debit', 'rub'), ('Debit', 'usd'), ('Invest', 'usd'),
+                                       ('Credit', 'rub')])
+client2 = Client("Власов Юрий", bank, [('Debit', 'usd'), ('Invest', 'usd'), ('DailyInvest', 'usd')])
+
+client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
+
+# print(client1.accounts)
+# print(client2.accounts)
+# print(client3.accounts)
+# ______________________________________________________________________________________________________________________
+# ПРОВЕРКА БАЛАНСА, СНЯТИЕ, ПОПОЛНЕНИЕ
+
+# debit1 = client1.accounts['Debit_rub']
+# print(debit1.balance)
+# debit1.top_up_balance(50000)
+# print(debit1.balance)
+# debit1.withdraw(5000)
+# print(debit1.balance)
+# debit1.purchase(380, 'rub', 'coffee')
+# print(debit1.balance)
+# ______________________________________________________________________________________________________________________
+# ВЗЯТЬ КРЕДИТ, СДЕЛАТЬ ПЛАТЕЖ, ПОГАСИТЬ КРЕДИТ
+
+# credit1 = Credit(bank, 'rub')
+# client1 += credit1
+# print(client1.accounts)
+# client1.get_credit(25000, 12, 'rub')
+# print(f"Общий баланс дебетового счета с учетом кредитных средств: {debit1.balance}")
+# credit1.credit_info()
+# ______________________________________________________________________________________________________________________
+# ОТКРЫТЬ И ЗАКРЫТЬ ИНВЕСТИЦИОННЫЙ СЧЕТ
+
+# debit2 = client2.accounts['Debit_usd']
+# print(debit2.balance)
+# invest2 = client2.accounts['Invest_usd']
+# invest2.lets_invest(1350, 6)
+# print(invest2.balance)
+# client2.close_invest('usd')
+# ______________________________________________________________________________________________________________________
+# ОТКРЫТЬ, ЗАКРЫТЬ СЧЕТ, ПОКУПКИ, ПОПОЛНЕНИЕ, СНЯТИЕ СО СЧЕТА DailyInvest
+
+# debit3 = Debit(bank, 'eur')
+# client3 += debit3
+# print(debit3.balance)
+# daily_invest3 = DailyInvest(bank, 'eur')
+# client3 += daily_invest3
+# daily_invest3.lets_invest(1350)
+# print(daily_invest3.balance)
+# daily_invest3.accrue_daily_interest()
+# print(daily_invest3.balance)
+# daily_invest3.purchase(20, 'coca-cola')
+# # client3.close_daily_invest('eur')
+# print(daily_invest3.balance)
+# daily_invest3.top_up_balance(300)
+# print(daily_invest3.balance)
+# daily_invest3.withdraw(125)
+# print(daily_invest3.balance)
+# ______________________________________________________________________________________________________________________
+# ПЕРЕВОДЫ МЕЖДУ СЧЕТАМИ
+# ______________________________________________________________________________________________________________________
+# ПРОВЕРКА КОРРЕКТНОСТИ ПЕРЕСЧЕТА ОБЩЕГО БАЛАНСА БАНКА
+# ______________________________________________________________________________________________________________________
+# ПРОВЕРКА КОРРЕКТНОСТИ ВЫВОДА СПРАВОЧНОЙ ИНФОРМАЦИИ
