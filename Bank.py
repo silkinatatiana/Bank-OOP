@@ -58,7 +58,7 @@ class Bank:
         print(f"Клиент {client} удален")
         return self
 
-    def change_balance(self, summa, currency='rub', add=True):
+    def change_balance(self, summa, currency, add=True):
         if currency not in self.exchanges:
             raise Exception("Неизвестная валюта")
         conv_summa = summa * self.exchanges[currency]
@@ -72,6 +72,7 @@ class Bank:
             self.bank_currencies[currency] -= summa
 
     def get_info(self):
+        print("Информация по всем клиентам банка:")
         for client in self.clients:
             print(client.get_all_info())
 
@@ -127,21 +128,14 @@ class Client:
         self.accounts[name_account].is_activated = True
 
     def transfer_to(self, summa, where, currency, from_, currency2, client=None):
-        # print(where)
-        # print(from_)
-        # from_account = from_ + '_' + currency
-        # where_account = where + '_' + currency2
-        # print(from_account)
-        # print(where_account)
-        # print()
         from_account = from_
         where_account = where
 
         if client:  # перевод другому клиенту
-            if where != 'Debit':
-                raise Exception("Перевод другому клиенту можно совершать только на дебетовый счет.")
             if currency != currency2:
                 raise Exception("Перевод другому клиенту можно совершать только в одинаковой валюте")
+            if where != 'Debit_' + currency:
+                raise Exception("Перевод другому клиенту можно совершать только на дебетовый счет.")
             if from_account not in self.accounts:
                 raise Exception(f"Счета {from_} у клиента {self.name} не существует")
             if where_account not in client.accounts:
@@ -398,7 +392,7 @@ class Base(ABC):
         self -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency} Доступно {self.balance} {self.currency}"
         # self.add_to_history(self.filename, write_down)
-        self.bank.change_balance(summa, self.currency)
+        self.bank.change_balance(summa, self.currency, add=False)
 
     @abstractmethod
     def get_name(self):
@@ -562,6 +556,10 @@ client2 = Client("Власов Юрий", bank, [('Debit', 'usd'), ('Invest', 'u
 
 client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
 
+bank += client1
+bank += client2
+bank += client3
+
 # print(client1.accounts)
 # print(client2.accounts)
 # print(client3.accounts)
@@ -578,7 +576,7 @@ client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
 # print(debit1.balance)
 # ______________________________________________________________________________________________________________________
 # ВЗЯТЬ КРЕДИТ, СДЕЛАТЬ ПЛАТЕЖ, ПОГАСИТЬ КРЕДИТ
-
+# TODO работает некорректно
 # credit1 = Credit(bank, 'rub')
 # client1 += credit1
 # print(client1.accounts)
@@ -614,8 +612,85 @@ client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
 # daily_invest3.withdraw(125)
 # print(daily_invest3.balance)
 # ______________________________________________________________________________________________________________________
-# ПЕРЕВОДЫ МЕЖДУ СЧЕТАМИ
+# ПЕРЕВОДЫ МЕЖДУ СВОИМИ СЧЕТАМИ
+
+# debit1 = client1.accounts['Debit_rub']
+# debit1_usd = client1.accounts['Debit_usd']
+# debit1.activate()
+# debit1_usd.activate()
+#
+# print(debit1.balance)
+# print(debit1_usd.balance)
+#
+# debit1.top_up_balance(50000)
+# print(debit1.balance)
+#
+# client1.transfer_to(3800, 'Debit_usd', 'usd', 'Debit_rub', 'rub')
+# print(debit1.balance)
+# print(debit1_usd.balance)
+# ______________________________________________________________________________________________________________________
+# ПЕРЕВОД ДРУГОМУ КЛИЕНТУ
+
+# debit2 = Debit(bank, 'rub')
+# client2 += debit2
+# debit1 = client1.accounts['Debit_rub']
+# debit1.activate()
+# debit2.activate()
+#
+# debit1.top_up_balance(50000)
+# print(debit1.balance)
+#
+# client1.transfer_to(3800, 'Debit_rub', 'rub', 'Debit_rub', 'rub', client=client2)
+# print(debit1.balance)
+# print(debit2.balance)
+
 # ______________________________________________________________________________________________________________________
 # ПРОВЕРКА КОРРЕКТНОСТИ ПЕРЕСЧЕТА ОБЩЕГО БАЛАНСА БАНКА
+# TODO работает некорректно
+# print(f"Общий баланс банка {bank.overall_balance}")
+# print(f"Баланс банка в рублях {bank.rub_balance}")
+# print(f"Баланс банка в долларах {bank.usd_balance}")
+# print(f"Баланс банка в евро {bank.euro_balance}")
+# print()
+# debit1 = client1.accounts['Debit_rub']
+# print(f"Баланс debit1 в рублях {debit1.balance}")
+# debit1.top_up_balance(50000)
+# print(f"Баланс debit1 в рублях {debit1.balance}")
+# print(f"Общий баланс банка {bank.overall_balance}")
+# print(f"Баланс банка в рублях {bank.rub_balance}")
+# print()
+# debit1.withdraw(5000)
+# print(f"Баланс debit1 в рублях {debit1.balance}")
+# print(f"Общий баланс банка {bank.overall_balance}")
+# print(f"Баланс банка в рублях {bank.rub_balance}")
+# print()
+# debit1.purchase(380, 'rub', 'coffee')
+# print(f"Баланс debit1 в рублях {debit1.balance}")
+# print(f"Общий баланс банка {bank.overall_balance}")
+# print(f"Баланс банка в рублях {bank.rub_balance}")
+
+
 # ______________________________________________________________________________________________________________________
 # ПРОВЕРКА КОРРЕКТНОСТИ ВЫВОДА СПРАВОЧНОЙ ИНФОРМАЦИИ
+#
+# debit1 = client1.accounts['Debit_rub']
+# print(debit1.balance)
+# debit1.top_up_balance(50000)
+# print(debit1.balance)
+# debit1.withdraw(5000)
+# print(debit1.balance)
+# debit1.purchase(380, 'rub', 'coffee')
+# print(debit1.balance)
+# print(client1.get_all_info())
+
+# debit3 = Debit(bank, 'eur')
+# client3 += debit3
+# print(debit3.balance)
+# daily_invest3 = DailyInvest(bank, 'eur')
+# client3 += daily_invest3
+# daily_invest3.lets_invest(1350)
+# print(daily_invest3.balance)
+# print(client1.get_all_info())
+# print()
+# bank.get_info()
+# ______________________________________________________________________________________________________________________
