@@ -1,28 +1,60 @@
 from abc import ABC, abstractmethod
 from datetime import date, datetime
+from db import Database
+from functools import wraps
 
+db = Database('logs.db')
 
-class CreateHistory:
-    def __init__(self, original_cls):
-        self.original_cls = original_cls
+# class CreateHistory:
+#     def __init__(self, original_cls):
+#         self.original_cls = original_cls
 
-    def __call__(self, *args, **kwargs):
-        instance = self.original_cls(*args, **kwargs)
+#     def __call__(self, *args, **kwargs):
+#         instance = self.original_cls(*args, **kwargs)
+        
+#         # Декорируем все методы класса, кроме специальных (начинающихся с __)
+#         for attr_name in dir(instance):
+#             if not attr_name.startswith('__'):
+#                 attr = getattr(instance, attr_name)
+#                 if callable(attr):
+#                     decorated_attr = self._decorate_method(attr)
+#                     setattr(instance, attr_name, decorated_attr)
+        
+#         return instance
 
-        def add_to_history(filename, info):
-            try:
-                if not instance.first_log:
-                    with open(f"history/{filename}", 'w', encoding='UTF-8') as file:
-                        file.write(f"{info.rstrip()}\n")
-                    instance.first_log = True
-                else:
-                    with open(f"history/{filename}", 'a', encoding='UTF-8') as file:
-                        file.write(f"{info.rstrip()}\n")
-            except Exception as e:
-                print(f"При добавлении записи в историю операций произошла ошибка: '{e}'")
+#     def _decorate_method(self, method):
+#         @wraps(method)
+#         def wrapper(*args, **kwargs):
+            # Логируем вызов метода
+            # try:
+            #     db.add_entry({
+            #         'class': self.original_cls.__name__,
+            #         'method': method.__name__,
+            #         'args': args[1:],  # Пропускаем self
+            #         'kwargs': kwargs,
+            #         'timestamp': datetime.now()
+            #     })
+            # except Exception as e:
+                # print(f"При добавлении записи в историю операций произошла ошибка: '{e}'")
+            
+            # Вызываем оригинальный метод
+        #     return method(*args, **kwargs)
+        # return wrapper
 
-        instance.add_to_history = add_to_history
-        return instance
+# class CreateHistory:
+#     def __init__(self, original_cls):
+#         self.original_cls = original_cls
+
+#     def __call__(self, *args, **kwargs):
+#         instance = self.original_cls(*args, **kwargs)
+        
+#         try:
+#             print(args, kwargs)
+#             db.add_entry(args, kwargs)
+#         except Exception as e:
+#              print(f"При добавлении записи в историю операций произошла ошибка: '{e}'")
+
+#         return instance
 
 
 class Bank:
@@ -91,12 +123,7 @@ class Client:
         self.name = name
         self.solvency = True  # платежеспособность, если да - кредит дадут, если нет - откажут
         self.bank = bank
-        self.filenames = []
         self.accounts = self.add_accounts(accounts)
-        for name, obj in self.accounts.items():
-            filename = self.create_filename(obj)
-            self.filenames.append(filename)
-            self.accounts[name].add_to_history(filename, f'Открыт {name} счет в валюте {obj.currency}')
 
     def add_accounts(self, accounts):
         accounts_obj = {}
@@ -105,15 +132,11 @@ class Client:
                 raise Exception(f"Счета {el[0]} не существует")
 
             name_account = el[0] + '_' + el[1]
-            accounts_obj[name_account] = self.bank.bank_accounts[el[0]](self.bank, el[1])
+            current_acc_obj = self.bank.bank_accounts[el[0]](self.bank, el[1])
+            accounts_obj[name_account] = current_acc_obj
+            current_acc_obj.client = self
 
         return accounts_obj
-
-    def create_filename(self, obj):
-        f_name = f"{self.name.split()[0]}_{self.name.split()[1]}_{obj.get_name()}_{obj.currency}.txt'"
-        obj.filename = f_name
-        self.filenames.append(obj.filename)
-        return f_name
 
     def __iadd__(self, account_obj):
         name = account_obj.get_name()
@@ -125,7 +148,7 @@ class Client:
             raise Exception("Неверно указана валюта")
 
         self.accounts[name + '_' + currency] = account_obj
-        self.create_filename(account_obj)
+        self.accounts[name + '_' + currency].client = self
         return self
 
     def __str__(self):
@@ -184,8 +207,6 @@ class Client:
             self.accounts[where_account].balance += to_exchange
             res = (f"Выполнен перевод себе с {from_} счета на {where} счет."
                    f"Сумма перевода {summa} {currency} Баланс {from_} счета {self.accounts[from_account].balance} {currency}")
-            filename = self.accounts[from_].filename
-        self.accounts[from_].add_to_history(filename, res)
 
     def calc_commission(self, summa):
         return summa * self.bank.commission
@@ -219,8 +240,6 @@ class Client:
             f"Платеж составит {self.accounts[name_account].payment} {self.accounts[name_account].currency} "
             f"Процентная ставка {self.bank.credit_percent} %")
         print(write_down)
-        filename = f"{self.name.split()[0]}_{self.name.split()[1]}_{name_account}_{currency}"
-        self.accounts[name_account].add_to_history(filename, write_down)
 
     def make_payment(self, summa, currency):
         credit_account = 'Credit' + '_' + currency
@@ -238,8 +257,6 @@ class Client:
             self.accounts[credit_account].is_activated = False
             self.solvency = True
             write_down = "Кредит погашен"
-            filename = self.accounts[credit_account].filename
-            self.accounts[credit_account].add_to_history(filename, write_down)
 
         else:
             if summa == self.accounts[credit_account].payment:
@@ -256,8 +273,6 @@ class Client:
                 self.accounts[credit_account].payment = self.accounts[credit_account].balance / self.accounts[
                     credit_account].period
             write_down = f"Внесен платеж в размере {summa} руб.Остаток долга {self.accounts[credit_account].balance} {currency}"
-            filename = self.accounts[credit_account].filename
-            self.accounts[credit_account].add_to_history(filename, write_down)
 
     def close_debit(self, name, currency):
         if name != 'Debit':
@@ -270,8 +285,6 @@ class Client:
             self.accounts[name_account].withdraw(summa)
         self.accounts[name_account].is_activated = False
         write_down = f"Счет {name} в валюте {currency} закрыт"
-        filename = self.accounts[name_account].filename
-        self.accounts[name_account].add_to_history(filename, write_down)
 
     def close_credit(self, name, currency):
         if name != 'Credit':
@@ -285,8 +298,6 @@ class Client:
         if self.accounts[name_account].balance == 0:
             self.accounts[name_account].is_activated = False
             write_down = f"Счет {name} в валюте {currency} закрыт"
-            filename = self.accounts[name_account].filename
-            self.accounts[name_account].add_to_history(filename, write_down)
 
     def close_invest(self, currency):
         name_account = 'Invest_' + currency
@@ -339,9 +350,8 @@ class Base(ABC):
         self.is_activated = False
         self.is_blocked = False
         self.bank = bank
-        self.filename = None
         self.currency = currency
-        self.first_log = False
+        # self.client = None
 
     def check_block(self):
         if self.is_blocked:
@@ -367,7 +377,6 @@ class Base(ABC):
         self.bank.change_balance(summa, self.currency)
         write_down = (f"Снятие наличных с {self.get_name()} счета в размере {summa} {self.currency}. "
                       f"Доступно {self.balance} {self.currency}.")
-        self.add_to_history(self.filename, write_down)
 
     def calc_commission(self, summa):
         return summa * self.bank.commission
@@ -386,7 +395,6 @@ class Base(ABC):
             self.activate()
         self += summa
         write_down = f"Пополнение {self.get_name()} счета в размере {summa} {self.currency}. Доступно {self.balance} {self.currency}."
-        self.add_to_history(self.filename, write_down)
         if not transact:  # если это не перевод
             self.bank.change_balance(summa, self.currency, add=True)
 
@@ -398,7 +406,6 @@ class Base(ABC):
             raise Exception(f"Недостаточно средств на счете на покупку {name}")
         self -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency} Доступно {self.balance} {self.currency}"
-        self.add_to_history(self.filename, write_down)
         self.bank.change_balance(summa, self.currency, add=False)
 
     @abstractmethod
@@ -479,7 +486,6 @@ class Invest(Base):
         result = (
             f"Вы инвестировали {summa} {self.currency}. на срок {self.period} месяцев под {int(self.bank.invest_percent * 100)} %. "
             f"Прибыль за весь период составит {int(self.balance + self.profit)} {self.currency}.")
-        self.add_to_history(self.filename, result)
         self += summa
         print(result)
 
@@ -529,7 +535,6 @@ class DailyInvest(Base):
         # days_rate = self.bank.daily_invest_percent / 365
         write_down = (
             f"Вы инвестировали {summa} {self.currency} под {int(self.bank.daily_invest_percent * 100)}%. ")
-        self.add_to_history(self.filename, write_down)
         self.balance += summa
         print(write_down)
 
@@ -540,9 +545,8 @@ class DailyInvest(Base):
         if summa > self.balance:
             raise Exception("Недостаточно средств")
         self.balance -= summa
-        bank.bank_currencies[self.currency] -= summa
+        self.bank.bank_currencies[self.currency] -= summa
         write_down = f"Снятие наличных в размере {summa} {self.currency}"
-        self.add_to_history(self.filename, write_down)
 
     def purchase(self, summa, name):
         if self.is_blocked:
@@ -551,155 +555,10 @@ class DailyInvest(Base):
         if summa > self.balance:
             raise Exception("Недостаточно средств")
         self.balance -= summa
-        bank.bank_currencies[self.currency] -= summa
+        self.bank.bank_currencies[self.currency] -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency}"
-        self.add_to_history(self.filename, write_down)
 
     def get_name(self):
         return 'DailyInvest'
 
 
-# ______________________________________________________________________________________________________________________
-bank = Bank()
-client1 = Client("Иванов Иван", bank, [('Debit', 'rub'), ('Debit', 'usd'), ('Invest', 'usd'),
-                                       ('Credit', 'rub')])
-client2 = Client("Власов Юрий", bank, [('Debit', 'usd'), ('Invest', 'usd'), ('DailyInvest', 'usd')])
-#
-client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
-#
-bank += client1
-bank += client2
-bank += client3
-
-# print(client1.accounts)
-# print(client2.accounts)
-# print(client3.accounts)
-# ______________________________________________________________________________________________________________________
-# ПРОВЕРКА БАЛАНСА, СНЯТИЕ, ПОПОЛНЕНИЕ
-
-# debit1 = client1.accounts['Debit_rub']
-# print(debit1.balance)
-# debit1.top_up_balance(50000)
-# print(debit1.balance)
-# debit1.withdraw(5000)
-# print(debit1.balance)
-# debit1.purchase(380, 'rub', 'coffee')
-# print(debit1.balance)
-# ______________________________________________________________________________________________________________________
-# ВЗЯТЬ КРЕДИТ, СДЕЛАТЬ ПЛАТЕЖ, ПОГАСИТЬ КРЕДИТ
-# credit1 = Credit(bank, 'rub')
-# client1 += credit1
-# print(client1.accounts)
-# client1.get_credit(25000, 12, 'rub')
-# print(f"Общий баланс дебетового счета с учетом кредитных средств: {debit1.balance}")
-# credit1.credit_info()
-# ______________________________________________________________________________________________________________________
-# ОТКРЫТЬ И ЗАКРЫТЬ ИНВЕСТИЦИОННЫЙ СЧЕТ
-
-# debit2 = client2.accounts['Debit_usd']
-# print(debit2.balance)
-# invest2 = client2.accounts['Invest_usd']
-# invest2.lets_invest(1350, 6)
-# print(invest2.balance)
-# client2.close_invest('usd')
-# ______________________________________________________________________________________________________________________
-# ОТКРЫТЬ, ЗАКРЫТЬ СЧЕТ, ПОКУПКИ, ПОПОЛНЕНИЕ, СНЯТИЕ СО СЧЕТА DailyInvest
-
-# debit3 = Debit(bank, 'eur')
-# client3 += debit3
-# print(debit3.balance)
-# daily_invest3 = DailyInvest(bank, 'eur')
-# client3 += daily_invest3
-# daily_invest3.lets_invest(1350)
-# print(daily_invest3.balance)
-# daily_invest3.accrue_daily_interest()
-# print(daily_invest3.balance)
-# daily_invest3.purchase(20, 'coca-cola')
-# # client3.close_daily_invest('eur')
-# print(daily_invest3.balance)
-# daily_invest3.top_up_balance(300)
-# print(daily_invest3.balance)
-# daily_invest3.withdraw(125)
-# print(daily_invest3.balance)
-# ______________________________________________________________________________________________________________________
-# ПЕРЕВОДЫ МЕЖДУ СВОИМИ СЧЕТАМИ
-
-# debit1 = client1.accounts['Debit_rub']
-# debit1_usd = client1.accounts['Debit_usd']
-# debit1.activate()
-# debit1_usd.activate()
-#
-# print(debit1.balance)
-# print(debit1_usd.balance)
-#
-# debit1.top_up_balance(50000)
-# print(debit1.balance)
-#
-# client1.transfer_to(3800, 'Debit_usd', 'usd', 'Debit_rub', 'rub')
-# print(debit1.balance)
-# print(debit1_usd.balance)
-# ______________________________________________________________________________________________________________________
-# ПЕРЕВОД ДРУГОМУ КЛИЕНТУ
-#
-# debit2 = Debit(bank, 'rub')
-# client2 += debit2
-# debit1 = client1.accounts['Debit_rub']
-# debit1.activate()
-# debit2.activate()
-#
-# debit1.top_up_balance(50000)
-# print(debit1.balance)
-
-# client1.transfer_to(3800, 'Debit_rub', 'rub', 'Debit_rub', 'rub', client=client2)
-# print(debit1.balance)
-# print(debit2.balance)
-
-# ______________________________________________________________________________________________________________________
-# ПРОВЕРКА КОРРЕКТНОСТИ ПЕРЕСЧЕТА ОБЩЕГО БАЛАНСА БАНКА
-# TODO работает некорректно
-print(f"Общий баланс банка {bank.overall_balance}")
-print(f"Баланс банка в рублях {bank.rub_balance}")
-print(f"Баланс банка в долларах {bank.usd_balance}")
-print(f"Баланс банка в евро {bank.eur_balance}")
-print()
-debit1 = client1.accounts['Debit_rub']
-print(f"Баланс debit1 в рублях {debit1.balance}")
-debit1.top_up_balance(50000)
-print(f"Баланс debit1 в рублях {debit1.balance}")
-print(f"Общий баланс банка {bank.overall_balance}")
-print(f"Баланс банка в рублях {bank.bank_currencies['rub']}")
-print()
-debit1.withdraw(5000)
-print(f"Баланс debit1 в рублях {debit1.balance}")
-print(f"Общий баланс банка {bank.overall_balance}")
-print(f"Баланс банка в рублях {bank.rub_balance}")
-print()
-debit1.purchase(380, 'rub', 'coffee')
-print(f"Баланс debit1 в рублях {debit1.balance}")
-print(f"Общий баланс банка {bank.overall_balance}")
-print(f"Баланс банка в рублях {bank.rub_balance}")
-
-# ______________________________________________________________________________________________________________________
-# ПРОВЕРКА КОРРЕКТНОСТИ ВЫВОДА СПРАВОЧНОЙ ИНФОРМАЦИИ
-#
-# debit1 = client1.accounts['Debit_rub']
-# print(debit1.balance)
-# debit1.top_up_balance(50000)
-# print(debit1.balance)
-# debit1.withdraw(5000)
-# print(debit1.balance)
-# debit1.purchase(380, 'rub', 'coffee')
-# print(debit1.balance)
-# print(client1.get_all_info())
-
-# debit3 = Debit(bank, 'eur')
-# client3 += debit3
-# print(debit3.balance)
-# daily_invest3 = DailyInvest(bank, 'eur')
-# client3 += daily_invest3
-# daily_invest3.lets_invest(1350)
-# print(daily_invest3.balance)
-# print(client1.get_all_info())
-# print()
-# bank.get_info()
-# ______________________________________________________________________________________________________________________
