@@ -3,12 +3,11 @@ from db import Database
 
 
 bank = Bank()
-client1 = Client("Иванов Иван", bank, [('Debit', 'rub'), ('Debit', 'usd'), ('Invest', 'usd'),
-                                       ('Credit', 'rub')])
+
+client1 = Client("Иванов Иван", bank, [('Debit', 'rub'), ('Debit', 'usd'), ('Invest', 'usd'), ('Credit', 'rub')])
 client2 = Client("Власов Юрий", bank, [('Debit', 'usd'), ('Invest', 'usd'), ('DailyInvest', 'usd')])
-#
 client3 = Client("Игнатова Дарья", bank, [('Debit', 'rub')])
-#
+
 bank += client1
 bank += client2
 bank += client3

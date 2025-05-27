@@ -15,19 +15,19 @@ class Database:
                          log TEXT NOT NULL,
                          account TEXT NOT NULL,
                          currency TEXT NOT NULL,
-                         datetime TEXT NOT NULL)
+                         timestamp TEXT NOT NULL)
                          """)
 
         self.conn.commit()
 
 
-    def add_entry(self, args, kwargs):
-        print(args, kwargs)
+    def add_entry(self, client_name, log, account, currency):
+        timestamp = datetime.now().replace(microsecond=0)
         sql = """
-            INSERT INTO users (client_name, log, account, currency, datetime)
+            INSERT INTO users (client_name, log, account, currency, timestamp)
             VALUES (?, ?, ?, ?, ?)
             """
-        # self.cur.execute(sql, (client_name, log, account.get_name(), account.currency, datetime.now()))
+        self.cur.execute(sql, (client_name, log, account, currency, timestamp))
         self.conn.commit()
 
     def show_table(self, **kwargs):
