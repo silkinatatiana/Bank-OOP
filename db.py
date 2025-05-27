@@ -1,82 +1,119 @@
 import sqlite3
 from random import randint, choice
-from datetime import datetime
+from datetime import date
 
 
 class Database:
-    def __init__(self, filename):
-        self.conn = sqlite3.connect(filename)
-        self.cur = self.conn.cursor()
+    def __init__(self, filename='bank.db'):
+        self.db_name = sqlite3.connect(filename)
+        self.create_table()
+        # self.cur = self.conn.cursor()
 
-        self.cur.execute("""
-                         CREATE TABLE IF NOT EXISTS users
+    def create_table(self):
+        with self.get_connection() as conn:
+            conn.execute("""
+                         CREATE TABLE IF NOT EXISTS bank
                          (id INTEGER PRIMARY KEY AUTOINCREMENT,
-                         client_name TEXT NOT NULL,
+                         client TEXT NOT NULL,
                          log TEXT NOT NULL,
                          account TEXT NOT NULL,
+                         balance INTEGER NOT NULL,
                          currency TEXT NOT NULL,
-                         timestamp TEXT NOT NULL)
+                         status TEXT NOT NULL,
+                         timestamp TEXT NOT NULL);
                          """)
 
-        self.conn.commit()
+            conn.commit()
 
+    def get_connection(self):
+        return sqlite3.connect('bank.db')
 
-    def add_entry(self, client_name, log, account, currency):
-        timestamp = datetime.now().replace(microsecond=0)
-        sql = """
-            INSERT INTO users (client_name, log, account, currency, timestamp)
-            VALUES (?, ?, ?, ?, ?)
-            """
-        self.cur.execute(sql, (client_name, log, account, currency, timestamp))
-        self.conn.commit()
+    def add_entry(self, client_name, log, account, balance, currency, status):
+        timestamp = date.today()
 
-    def show_table(self, **kwargs):
-        if not kwargs:
-            sql = "SELECT * FROM users"
+        with self.get_connection() as conn:
+            conn.execute("""
+                        INSERT INTO bank (client, log, account, balance, currency, status, timestamp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?);
+                        """, (client_name, log, account, balance, currency, status, timestamp))
+            conn.commit()
 
-        if 'name' in kwargs:
-            sql = self.selection_by_names(kwargs['name'])
-
-        if 'account' in kwargs:
-            sql = self.selection_by_accounts(kwargs['account'])
-
-        if 'date' in kwargs:
-            sql = self.selection_by_dates(kwargs['dates'])
-
-        self.cur.execute(sql)
-
-        for line in self.cur.fetchall():
-                print(*line)
+    def show_table(self, filtr, value):    
+        match filtr:
+            case 'name':
+                res = self.selection_by_names(value)
+            case 'account':
+                res = self.selection_by_accounts(value)
+            case 'date':
+                res = self.selection_by_dates(value)
+            case 'status':
+                res = self.selection_by_status(value)
+            case _:
+                res = "SELECT * FROM bank;"
+        return res
 
     def selection_by_id(self, *args):
         placeholders = ','.join('?' for _ in args)
-        return (f"SELECT * FROM users WHERE id IN ({placeholders})", args)
+
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE id IN ({placeholders});", tuple(args))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()
         
     def selection_by_names(self, *args):
         placeholders = ','.join('?' for _ in args)
-        return (f"SELECT * FROM users WHERE client IN ({placeholders})", args)
+
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE client IN ({placeholders});", tuple(args))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()
 
     def selection_by_accounts(self, *args):
         placeholders = ','.join('?' for _ in args)
-        return (f"SELECT * FROM users WHERE account IN ({placeholders})", args)
+
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE account IN ({placeholders});", tuple(args))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()
 
     def selection_by_currency(self, *args):
         placeholders = ','.join('?' for _ in args)
-        return (f"SELECT * FROM users WHERE currency IN ({placeholders})", args)
+
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE currency IN ({placeholders});", tuple(args))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()
 
     def selection_by_dates(self, *args):
-        placeholders = ','.join('?' for _ in args)
-        return (f"SELECT * FROM users WHERE datetime IN ({placeholders})", args)
+        if len(args) == 1:
+            date_from = args[0]
+            date_to = args[0]
+        elif len(args) == 2:
+            date_from = args[0]
+            date_to = args[1]
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE timestamp BETWEEN ? AND ?;", (date_from, date_to))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()
+        
+    def selection_by_status(self, status):
+        with self.get_connection() as conn:
+            conn.execute(f"SELECT * FROM bank WHERE status = ?;", (status, ))
+
+            cursor = conn.cursor()
+            return cursor.fetchall()        
     
-    def delete_rows(self, **kwargs):
-        if not kwargs:
-            sql = "DELETE TABLE users"
-        if 'date' in kwargs:
-            sql = "DELETE FROM users WHERE datetime = ?, (kwargs['date'])"
+    def delete_table(self):
+        with self.get_connection() as conn:
+            conn.execute("DROP TABLE IF EXISTS bank;")
+            conn.commit()
 
-
-# obj = Database()
-# obj.show_table({'name': ('Игнатова Дарья', ), 'date': (datetime(2025, 4, 23), datetime(2025, 5, 23))})
-# obj.show_table({'name': ('Иванов Иван', ), 'account': ('Invest_rub', 'Debit_rub')})
-# obj.show_table({'currency': ('usd', )})
-# obj.show_table({'account': ('Invest_rub', 'Debit_rub', 'Credit_rub'), 'date': (datetime(2025, 4, 1), datetime(2025, 5, 1))})
+    def delete_rows(self, parametr, value):
+        with self.get_connection() as conn:
+            conn.execute("DELETE FROM bank WHERE ? = ?;", (parametr, value))
+            conn.commit()

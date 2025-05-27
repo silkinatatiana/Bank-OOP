@@ -1,3 +1,10 @@
 .venv
 .idea
-.git
+.vscode/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+bank.db
+__pycache__/bank.cpython-312.pyc
+__pycache__/db.cpython-312.pyc

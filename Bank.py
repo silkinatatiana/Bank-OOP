@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import date, datetime
 from db import Database
 
-db = Database('logs.db')
+db = Database('bank.db')
 
 class Bank:
     def __init__(self, overall_balance=10 ** 9, withdraw_limit=10 ** 5, credit_limit=50000, commission=0.05,
@@ -63,6 +63,17 @@ class Bank:
         for client in self.clients:
             print(client.get_all_info())
 
+    @staticmethod
+    def show_table(filtr, value):
+        db.show_table(filtr, value)
+
+    # @staticmethod
+    # def delete_from_db(parametr=None, value=None):
+    #     if parametr is None or value is None:
+    #         db.delete_table()
+    #     else:
+    #         db.delete_rows(parametr, value)
+
 
 class Client:
     def __init__(self, name, bank, accounts):
@@ -106,7 +117,7 @@ class Client:
             raise Exception(f"Нет счета {name} в валюте {currency}")
         self.accounts[name_account].is_activated = True
 
-    def transfer_to(self, summa, where, currency, from_, currency2, client=None):
+    def transfer_to(self, summa, from_, currency, where, currency2, client=None):
         from_account = from_
         where_account = where
 
@@ -133,8 +144,9 @@ class Client:
             self.accounts[from_account].balance -= sum_com
 
             write_down = (f"Выполнен перевод  клиенту {client.name}. Сумма перевода {summa} руб. "
-                          f"Комиссия {commission} руб. Баланс {from_} счета {self.accounts[from_account].balance} "
-                          f"{currency}")
+                          f"Комиссия {commission} {currency}")
+            db.add_entry(client_name=self.name, log=write_down, account=self.accounts[from_account].get_name(),
+                     balance=self.accounts[from_account].balance, currency=currency, status=self.accounts[from_account].status)
 
         else:  # перевод себе
             if where_account not in self.accounts or from_account not in self.accounts:
@@ -145,18 +157,23 @@ class Client:
                 raise Exception("Недостаточно средств на счете")
             if not self.accounts[where_account].is_activated or not self.accounts[from_account].is_activated:
                 raise Exception(f"Счет неактивен")
-
-            to_rub = summa * self.bank.exchanges['rub']
-            to_exchange = to_rub // self.bank.exchanges[currency2]
+            
+            if currency == 'rub':
+                summa_where = round(summa / self.bank.exchanges[currency2], 2)
+            else:
+                summa_where = round(summa * self.bank.exchanges[currency] / self.bank.exchanges[currency2], 2)
 
             self.accounts[from_account].balance -= summa
-            self.accounts[where_account].balance += to_exchange
-            write_down = (f"Выполнен перевод себе с {from_} счета на {where} счет."
-                          f"Сумма перевода {summa} {currency} Баланс {from_} счета {self.accounts[from_account].balance} {currency}")
+            self.accounts[where_account].balance += summa_where
+            write_down_from = (f"Выполнен перевод себе на {where} счет. Сумма перевода {summa} {currency}")
+            write_down_where = (f"Выполнен перевод себе с {from_} счета. Сумма перевода {summa_where} {currency2}")
 
-        db.add_entry(client_name=self.name, log=write_down, account=self.accounts[from_account].get_name(),
-                     currency=self.accounts[from_account].currency())
-
+            db.add_entry(client_name=self.name, log=write_down_from, account=self.accounts[from_account].get_name(),
+                     balance=self.accounts[from_account].balance, currency=currency, status=self.accounts[from_account].status)
+        
+            db.add_entry(client_name=self.name, log=write_down_where, account=self.accounts[where_account].get_name(),
+                     balance=self.accounts[from_account].balance, currency=currency2, status=self.accounts[where_account].status)
+        
     def calc_commission(self, summa):
         return summa * self.bank.commission
 
@@ -183,6 +200,8 @@ class Client:
         self.accounts[name_account].period = period
         self.solvency = False
         self.accounts[name_account].balance -= self.accounts[name_account].payment * period
+        self.accounts[name_account].status = 'Активен'
+        self.accounts[name_account].activate()
 
         write_down = (
             f"Выдан кредит на сумму {summa} на срок {period} месяцев. "
@@ -190,7 +209,7 @@ class Client:
             f"Процентная ставка {self.bank.credit_percent} %")
 
         db.add_entry(client_name=self.name, log=write_down, account='Credit',
-                     currency=currency)
+                     balance=self.accounts[name_account].balance, currency=currency, status=self.accounts[name_account].status)
 
     def make_payment(self, summa, currency):
         credit_account = 'Credit' + '_' + currency
@@ -224,10 +243,10 @@ class Client:
                 self.accounts[credit_account].balance -= fine
                 self.accounts[credit_account].payment = self.accounts[credit_account].balance / self.accounts[
                     credit_account].period
-            write_down = (f"Внесен платеж в размере {summa} руб."
+            write_down = (f"Внесен платеж в размере {summa} {currency}"
                           f"Остаток долга {self.accounts[credit_account].balance} {currency}")
 
-        db.add_entry(client_name=self.name, log=write_down, account='Credit', currency=currency)
+        db.add_entry(client_name=self.name, log=write_down, account='Credit', balance=self.accounts[credit_account].balance, currency=currency, status=self.accounts[credit_account].status)
 
     def close_debit(self, name, currency):
         if name != 'Debit':
@@ -239,9 +258,9 @@ class Client:
             summa = self.accounts[name_account].balance
             self.accounts[name_account].withdraw(summa)
         self.accounts[name_account].is_activated = False
-        write_down = f"Счет {name} в валюте {currency} закрыт"
+        write_down = "Счет закрыт"
 
-        db.add_entry(client_name=self.name, log=write_down, account=name, currency=currency)
+        db.add_entry(client_name=self.name, log=write_down, account=name, balance=self.balance, currency=currency, status=self.accounts[name_account])
 
     def close_credit(self, name, currency):
         write_down = None
@@ -256,9 +275,9 @@ class Client:
                 f"Для закрытия кредитного счета погасите задолженность в размере {name_account.balance} {currency}")
         if self.accounts[name_account].balance == 0:
             self.accounts[name_account].is_activated = False
-            write_down = f"Счет {name} в валюте {currency} закрыт"
+            write_down = f"Счет закрыт"
         db.add_entry(client_name=self.name, log=write_down, account='Credit',
-                     currency=currency)
+                     balance=self.balance, currency=currency, status=self.accounts[name_account])
 
     def close_invest(self, currency):
         name_account = 'Invest_' + currency
@@ -285,10 +304,10 @@ class Client:
         self.accounts[name_account].top_up_balance(summa, transact=True)
         self.accounts[name_account].is_activated = False
         self.accounts[name_account].balance = 0
-        write_down = f"Вывод денежных средств с инвестиционного счета в размере {summa} {currency}. Счет закрыт."
+        write_down = f"Вывод денежных средств в размере {summa} {currency}. Счет закрыт."
 
         db.add_entry(client_name=self.name, log=write_down, account='Invest',
-                     currency=currency)
+                     balance=self.accounts[name_account].balance, currency=currency, status=self.accounts[name_account].status)
 
     def close_daily_invest(self, currency):
         name_account = 'DailyInvest_' + currency
@@ -302,12 +321,9 @@ class Client:
         self.accounts[name_account].is_activated = False
         self.accounts[name_account].balance = 0
         self.accounts[name_account].is_activated = False
-        write_down = f"Вывод денежных средств с инвестиционного счета в размере {summa} {currency}. Счет закрыт."
+        write_down = f"Вывод денежных средств в размере {summa} {currency}. Счет закрыт."
         db.add_entry(client_name=self.name, log=write_down, account='Invest',
-                     currency=currency)
-
-    # def get_all_info(self):
-    #     return f"Данные клиента: {self.name}\nИнформация по счетам:\n{[el.get_info() for el in self.accounts.values()]}"
+                     balance=self.balance, currency=currency, status=self.accounts[name_account])
 
 
 class Base(ABC):
@@ -318,6 +334,7 @@ class Base(ABC):
         self.bank = bank
         self.currency = currency
         self.client = None
+        self.status = 'Неактивен'
 
     def check_block(self):
         if self.is_blocked:
@@ -326,14 +343,7 @@ class Base(ABC):
     def activate(self):
         self.check_block()
         self.is_activated = True
-
-    # def __iadd__(self, summa):
-    #     self.balance += summa
-    #     return self
-    #
-    # def __isub__(self, summa):
-    #     self.balance -= summa
-    #     return self
+        self.status = 'Активен'
 
     def withdraw(self, summa):
         if not isinstance(summa, (int, float)) or summa <= 0:
@@ -348,11 +358,11 @@ class Base(ABC):
         if summa == self.balance:  # ПРИ ПОПЫТКЕ СНЯТЬ ВСЕ ДЕНЬГИ СЧЕТ БЛОКИРУЕТСЯ
             self.block_account()
         self.balance -= summa
-        self.bank.change_balance(summa, self.currency)
-        write_down = (f"Снятие наличных с {self.get_name()} счета в размере {summa} {self.currency}. "
-                      f"Доступно {self.balance} {self.currency}.")
+        self.bank.change_balance(summa, self.currency, add=False)
+        write_down = (f"Снятие наличных в размере {summa} {self.currency}")
 
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
     def calc_commission(self, summa):
         return summa * self.bank.commission
@@ -362,21 +372,23 @@ class Base(ABC):
         if not self.is_activated:  # ПРИ ПОПОЛНЕНИИ БАЛАНСА СЧЕТ АВТОМАТИЧЕСКИ АКТИВИРУЕТСЯ, ЕСЛИ ОН НЕАКТИВЕН
             self.activate()
         self.balance += summa
-        write_down = f"Пополнение {self.get_name()} счета в размере {summa} {self.currency}. Доступно {self.balance} {self.currency}."
+        write_down = f"Пополнение в размере {summa} {self.currency}"
         if not transact:  # если это не перевод
             self.bank.change_balance(summa, self.currency, add=True)
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
-    def purchase(self, summa, curr, name):
+    def purchase(self, summa, name):
         self.check_block()
         if not self.is_activated:
             raise Exception("Счет неактивен")
         if summa > self.balance:
             raise Exception(f"Недостаточно средств на счете на покупку {name}")
         self.balance -= summa
-        write_down = f"Покупка {name} в размере {summa} {self.currency} Доступно {self.balance} {self.currency}"
+        write_down = f"Покупка {name} в размере {summa} {self.currency}"
         self.bank.change_balance(summa, self.currency, add=False)
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
     @abstractmethod
     def get_name(self):
@@ -390,8 +402,10 @@ class Base(ABC):
     def block_account(self):
         self.is_blocked = True
         self.is_activated = False
-        write_down = "Ваш счет заблокирован. Обратитесь в банк или по телефону +7(495)567-67-76 для разблокировки."
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        self.status = 'Заблокирован'
+        write_down = "Cчет заблокирован"
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
 
 class Debit(Base):
@@ -420,11 +434,11 @@ class Credit(Base):
     def purchase(self, *args):
         raise Exception("Операция недоступна")
 
-    def credit_info(self):
-        print(f"Сумма задолженности {self.balance} {self.currency}")
-        print(f"Общий срок кредита {self.period} месяцев")
-        print(f"Ежемесячный платеж {self.payment} {self.currency}")
-        print(f"Процентная ставка {int(self.bank.credit_percent * 100)} %")
+    # def credit_info(self):
+    #     print(f"Сумма задолженности {self.balance} {self.currency}")
+    #     print(f"Общий срок кредита {self.period} месяцев")
+    #     print(f"Ежемесячный платеж {self.payment} {self.currency}")
+    #     print(f"Процентная ставка {int(self.bank.credit_percent * 100)} %")
 
     def get_name(self):
         return 'Credit'
@@ -451,11 +465,10 @@ class Invest(Base):
         self.period = period
         self.date_start = date.today()
         self.date_end = self.calculate_date(period)
-        write_down = """Инвестиции на суммму {summa} {self.currency}. на срок {self.period} месяцев 
-                        под {int(self.bank.invest_percent * 100)} %.
-                        Прибыль за весь период составит {int(self.balance + self.profit)} {self.currency}."""
+        write_down = f"""Инвестиции на суммму {summa} {self.currency} на срок {self.period} месяцев под {int(self.bank.invest_percent * 100)} %. Прибыль за весь период составит {int(self.balance + self.profit)} {self.currency}."""
         self.balance += summa
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
     def calculate_date(self, period):
         try:
@@ -496,7 +509,8 @@ class DailyInvest(Base):
             self.balance = round(self.balance, 2)
             write_down = (f"Начисление процентов по инвестиционному счету в размере {profit} {self.currency} "
                           f"за период {days_passed} дн.")
-            db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+            db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                         balance=self.balance, currency=self.currency, status=self.status)
 
         self.last_interest_date = today
 
@@ -507,7 +521,8 @@ class DailyInvest(Base):
         write_down = (
             f"Инвестиции в размере {summa} {self.currency} под {int(self.bank.daily_invest_percent * 100)} %.")
         self.balance += summa
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
     def withdraw(self, summa):
         if self.is_blocked:
@@ -518,9 +533,10 @@ class DailyInvest(Base):
         self.balance -= summa
         self.bank.bank_currencies[self.currency] -= summa
         write_down = f"Снятие наличных в размере {summa} {self.currency}"
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
-    def purchase(self, summa, curr, name):
+    def purchase(self, summa, name):
         if self.is_blocked:
             raise Exception("Счет заблокирован")
         self.accrue_daily_interest()  # начисляем проценты на сумму до снятия
@@ -529,7 +545,8 @@ class DailyInvest(Base):
         self.balance -= summa
         self.bank.bank_currencies[self.currency] -= summa
         write_down = f"Покупка {name} в размере {summa} {self.currency}"
-        db.add_entry(client_name=self.client, log=write_down, account=self.get_name(), currency=self.currency)
+        db.add_entry(client_name=self.client.name, log=write_down, account=self.get_name(), 
+                     balance=self.balance, currency=self.currency, status=self.status)
 
     def get_name(self):
         return 'DailyInvest'
