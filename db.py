@@ -38,82 +38,70 @@ class Database:
                         """, (client_name, log, account, balance, currency, status, timestamp))
             conn.commit()
 
-    def show_table(self, filtr, value):    
-        match filtr:
-            case 'name':
-                res = self.selection_by_names(value)
-            case 'account':
-                res = self.selection_by_accounts(value)
-            case 'date':
-                res = self.selection_by_dates(value)
-            case 'status':
-                res = self.selection_by_status(value)
-            case _:
-                res = "SELECT * FROM bank;"
-        return res
-
-    def selection_by_id(self, *args):
-        placeholders = ','.join('?' for _ in args)
-
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE id IN ({placeholders});", tuple(args))
-
-            cursor = conn.cursor()
+    def show_table(self, select_col, **kwargs):  
+        with self.get_connection() as conn: 
+            if select_col or kwargs:
+                cursor = self.select_by_column(select_col, conn, **kwargs)
+            else:
+                cursor = conn.execute("SELECT * FROM bank;")
             return cursor.fetchall()
-        
-    def selection_by_names(self, *args):
-        placeholders = ','.join('?' for _ in args)
-
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE client IN ({placeholders});", tuple(args))
-
-            cursor = conn.cursor()
-            return cursor.fetchall()
-
-    def selection_by_accounts(self, *args):
-        placeholders = ','.join('?' for _ in args)
-
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE account IN ({placeholders});", tuple(args))
-
-            cursor = conn.cursor()
-            return cursor.fetchall()
-
-    def selection_by_currency(self, *args):
-        placeholders = ','.join('?' for _ in args)
-
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE currency IN ({placeholders});", tuple(args))
-
-            cursor = conn.cursor()
-            return cursor.fetchall()
-
-    def selection_by_dates(self, *args):
-        if len(args) == 1:
-            date_from = args[0]
-            date_to = args[0]
-        elif len(args) == 2:
-            date_from = args[0]
-            date_to = args[1]
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE timestamp BETWEEN ? AND ?;", (date_from, date_to))
-
-            cursor = conn.cursor()
-            return cursor.fetchall()
-        
-    def selection_by_status(self, status):
-        with self.get_connection() as conn:
-            conn.execute(f"SELECT * FROM bank WHERE status = ?;", (status, ))
-
-            cursor = conn.cursor()
-            return cursor.fetchall()        
     
-    def delete_table(self):
-        with self.get_connection() as conn:
-            conn.execute("DROP TABLE IF EXISTS bank;")
-            conn.commit()
+    def select_by_column(self, select_col, conn, **kwargs):
+        select = ', '.join(select_col) if select_col else '*'
+        where_clauses = []
+        params = []
+        
+        for key, values in kwargs.items():
+            if isinstance(values, (tuple, list)):
+                placeholders = ', '.join(['?'] * len(values))
+                where_clauses.append(f"{key} IN ({placeholders})")
+                params.extend(values)
+            else:
+                where_clauses.append(f"{key} = ?")
+                params.append(values)
+        
+        where = ' AND '.join(where_clauses) if where_clauses else '1=1'
+        sql = f"SELECT DISTINCT {select} FROM bank WHERE {where}"
+        cursor = conn.execute(sql, tuple(params))
+        return cursor
+    
+    def update_table(self, col_name, new_val, **kwargs):
+        with self.get_connection() as conn: 
+            where_clauses = []
+            params = []
+            
+            for key, values in kwargs.items():
+                if isinstance(values, (tuple, list)):
+                    placeholders = ', '.join(['?'] * len(values))
+                    where_clauses.append(f"{key} IN ({placeholders})")
+                    params.extend(values)
+                else:
+                    where_clauses.append(f"{key} = ?")
+                    params.append(values)
 
-    def delete_rows(self, parametr, value):
+            where = ' AND '.join(where_clauses) if where_clauses else '1=1'
+            sql = f"UPDATE bank SET {col_name} = ? WHERE {where}"
+            cursor = conn.execute(sql, (new_val, *params))
+            return cursor
+
+    def delete_from_db(self, **kwargs):
         with self.get_connection() as conn:
-            conn.execute("DELETE FROM bank WHERE ? = ?;", (parametr, value))
-            conn.commit()
+            if not kwargs:
+                cursor = conn.execute(f"DELETE FROM bank")
+            else:
+                where_clauses = []
+                params = []
+                
+                for key, values in kwargs.items():
+                    if isinstance(values, (tuple, list)):
+                        placeholders = ', '.join(['?'] * len(values))
+                        where_clauses.append(f"{key} IN ({placeholders})")
+                        params.extend(values)
+                    else:
+                        where_clauses.append(f"{key} = ?")
+                        params.append(values)
+
+                where = ' AND '.join(where_clauses) if where_clauses else '1=1'
+                sql = f"DELETE FROM bank WHERE {where}"
+                cursor = conn.execute(sql, tuple(params))
+            return cursor 

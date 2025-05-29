@@ -13,20 +13,48 @@ bank += client2
 bank += client3
 
 
-#################################### ПРОВЕРКИ РАБОТЫ ФУНКЦИЙ db.py ####################################
+#################################### ПРОВЕРКА РАБОТЫ ФУНКЦИИ SELECT ####################################
 
-# bank.show_table('account', 'debit')
-# bank.show_table('name', 'Игнатова Дарья')
-# bank.show_table('date', date(2025, 5, 27))
-# bank.show_table('status', 'Активен')
+# bank.show_table(select_col=('client', 'balance', 'currency'), account=('Debit', 'Invest'), client=('Иванов Иван', ))
+# bank.show_table(select_col=('account', ), client=('Игнатова Дарья', ))
+# bank.show_table(timestamp=(date(2025, 5, 29), ))
+# bank.show_table(status=('Заблокирован', ))
+# bank.show_table(select_col=('client', 'account'))
 # bank.show_table()
 
+#################################### ПРОВЕРКА РАБОТЫ ФУНКЦИИ UPDATE ####################################
+# bank.show_table(select_col=('client', 'account', 'status'))
+# print()
+# bank.update_table(col_name='status', new_val='Неактивен', client=('Иванов Иван', ), status=('Заблокирован', ))
+# bank.show_table(select_col=('client', 'account', 'status'))
+
+# bank.show_table(select_col=('client', 'account', 'balance'))
+# print()
+# bank.update_table(col_name='client', new_val='Меньшова Дарья', client=('Игнатова Дарья', ))
+# bank.show_table(select_col=('client', 'account', 'balance'))
 
 
+
+
+#################################### ПРОВЕРКА РАБОТЫ ФУНКЦИИ DELETE ####################################
+# bank.show_table(select_col=('account', 'client'))
+# print()
+# bank.delete_from_db(account=('DailyInvest', ))
+# bank.show_table(select_col=('account', 'client'))
+
+# bank.show_table(select_col=('account', 'client', 'currency'))
+# print()
+# bank.delete_from_db(client=('Иванов Иван', ), currency=('rub', ))
+# bank.show_table(select_col=('account', 'client', 'currency'))
+
+# bank.show_table()
+# print()
+# bank.delete_from_db()
+# bank.show_table()
 
 #################################### ЗАПОЛНЕНИЕ БД ####################################
 
-# # CLIENT Иванов Иван
+# CLIENT Иванов Иван
 # debit1 = client1.accounts['Debit_rub']
 # debit1.top_up_balance(5000)
 # debit1.withdraw(500)
@@ -86,6 +114,9 @@ bank += client3
 # print(debit1.balance)
 # debit1.purchase(380, 'coffee')
 # print(debit1.balance)
+# debit1.purchase(120, 'icecream')
+# balance = debit1.balance
+# debit1.withdraw(balance)
 
 
 

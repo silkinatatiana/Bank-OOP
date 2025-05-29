@@ -58,21 +58,15 @@ class Bank:
             self.overall_balance -= conv_summa
             self.bank_currencies[currency] -= summa
 
-    def get_info(self):
-        print("Информация по всем клиентам банка:")
-        for client in self.clients:
-            print(client.get_all_info())
+    def show_table(self, select_col=None, **kwargs):
+        for line in db.show_table(select_col, **kwargs):
+            print(*line)
 
-    @staticmethod
-    def show_table(filtr, value):
-        db.show_table(filtr, value)
+    def update_table(self, col_name, new_val, **kwargs):
+        db.update_table(col_name, new_val, **kwargs)
 
-    # @staticmethod
-    # def delete_from_db(parametr=None, value=None):
-    #     if parametr is None or value is None:
-    #         db.delete_table()
-    #     else:
-    #         db.delete_rows(parametr, value)
+    def delete_from_db(self, **kwargs):
+        db.delete_from_db(**kwargs)
 
 
 class Client:
@@ -357,6 +351,7 @@ class Base(ABC):
             raise ValueError(f"Недостаточно средств на счете")
         if summa == self.balance:  # ПРИ ПОПЫТКЕ СНЯТЬ ВСЕ ДЕНЬГИ СЧЕТ БЛОКИРУЕТСЯ
             self.block_account()
+            raise ValueError(f"Счет заблокирован в целях безопасности")
         self.balance -= summa
         self.bank.change_balance(summa, self.currency, add=False)
         write_down = (f"Снятие наличных в размере {summa} {self.currency}")
