@@ -45,12 +45,12 @@ class Database:
             else:
                 cursor = conn.execute("SELECT * FROM bank;")
             return cursor.fetchall()
-    
-    def select_by_column(self, select_col, conn, **kwargs):
-        select = ', '.join(select_col) if select_col else '*'
+        
+    @staticmethod
+    def get_sql_condition(**kwargs):
         where_clauses = []
         params = []
-        
+
         for key, values in kwargs.items():
             if isinstance(values, (tuple, list)):
                 placeholders = ', '.join(['?'] * len(values))
@@ -59,49 +59,43 @@ class Database:
             else:
                 where_clauses.append(f"{key} = ?")
                 params.append(values)
-        
-        where = ' AND '.join(where_clauses) if where_clauses else '1=1'
-        sql = f"SELECT DISTINCT {select} FROM bank WHERE {where}"
+        return where_clauses, params
+    
+    def select_by_column(self, select_col, conn, **kwargs):
+        select = ', '.join(select_col) if select_col else '*'
+        sql = f"SELECT DISTINCT {select} FROM bank;"
+
+        where_clauses, params = Database.get_sql_condition(**kwargs)
+
+        if where_clauses:
+            where = ' AND '.join(where_clauses)
+            sql = f"SELECT DISTINCT {select} FROM bank WHERE {where}"
         cursor = conn.execute(sql, tuple(params))
         return cursor
     
     def update_table(self, col_name, new_val, **kwargs):
         with self.get_connection() as conn: 
-            where_clauses = []
-            params = []
-            
-            for key, values in kwargs.items():
-                if isinstance(values, (tuple, list)):
-                    placeholders = ', '.join(['?'] * len(values))
-                    where_clauses.append(f"{key} IN ({placeholders})")
-                    params.extend(values)
-                else:
-                    where_clauses.append(f"{key} = ?")
-                    params.append(values)
+            sql = f"UPDATE bank SET {col_name} = ?;"
 
-            where = ' AND '.join(where_clauses) if where_clauses else '1=1'
-            sql = f"UPDATE bank SET {col_name} = ? WHERE {where}"
+            where_clauses, params = Database.get_sql_condition(**kwargs)
+
+            if where_clauses:
+                where = ' AND '.join(where_clauses)
+                sql = f"UPDATE bank SET {col_name} = ? WHERE {where};"
+
             cursor = conn.execute(sql, (new_val, *params))
             return cursor
 
     def delete_from_db(self, **kwargs):
         with self.get_connection() as conn:
+            sql = f"DELETE FROM bank;"
             if not kwargs:
-                cursor = conn.execute(f"DELETE FROM bank")
+                cursor = conn.execute(sql)
             else:
-                where_clauses = []
-                params = []
-                
-                for key, values in kwargs.items():
-                    if isinstance(values, (tuple, list)):
-                        placeholders = ', '.join(['?'] * len(values))
-                        where_clauses.append(f"{key} IN ({placeholders})")
-                        params.extend(values)
-                    else:
-                        where_clauses.append(f"{key} = ?")
-                        params.append(values)
+                where_clauses, params = Database.get_sql_condition(**kwargs)
 
-                where = ' AND '.join(where_clauses) if where_clauses else '1=1'
-                sql = f"DELETE FROM bank WHERE {where}"
+                if where_clauses:
+                    where = ' AND '.join(where_clauses) 
+                    sql = f"DELETE FROM bank WHERE {where}"
                 cursor = conn.execute(sql, tuple(params))
             return cursor 

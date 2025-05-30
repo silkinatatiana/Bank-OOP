@@ -15,7 +15,7 @@ bank += client3
 
 #################################### ПРОВЕРКА РАБОТЫ ФУНКЦИИ SELECT ####################################
 
-# bank.show_table(select_col=('client', 'balance', 'currency'), account=('Debit', 'Invest'), client=('Иванов Иван', ))
+# bank.show_table(select_col=('account', 'client', 'balance', 'currency'), account=('Debit', 'Invest'), client=('Иванов Иван', ))
 # bank.show_table(select_col=('account', ), client=('Игнатова Дарья', ))
 # bank.show_table(timestamp=(date(2025, 5, 29), ))
 # bank.show_table(status=('Заблокирован', ))
